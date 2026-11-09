@@ -1,0 +1,10 @@
+package: dev.resonance.player
+name: Resonance
+summary: Music player for the songs already on your phone
+category: Music
+repo: https://github.com/xenone-beta/Resonance
+license: MIT
+author: xenone-beta
+description: |
+  A local-files music player with Material You design. No accounts, no ads, no internet permission.
+  Album colors, spectrum ring or vinyl mode, synced lyrics, equalizer, playlists, statistics and a home screen widget.

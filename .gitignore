@@ -1,0 +1,4 @@
+public/
+previous.json
+__pycache__/
+*.pyc

@@ -1,0 +1,10 @@
+package: dev.aauth.app
+name: AAuth
+summary: Offline two-factor authenticator (TOTP)
+category: Security
+repo: https://github.com/xenone-beta/AAuth
+license: MIT
+author: xenone-beta
+description: |
+  An offline authenticator for one-time codes. Codes are generated on the device, nothing is sent anywhere.
+  Material You design.
