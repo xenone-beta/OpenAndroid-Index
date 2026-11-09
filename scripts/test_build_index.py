@@ -22,6 +22,14 @@ META = {"package": "dev.a.b", "name": "A", "summary": "s", "category": "Music",
 
 
 class Tests(unittest.TestCase):
+    def test_stars_fall_back_when_offline(self):
+        orig = b.http_get
+        b.http_get = lambda *a, **k: (_ for _ in ()).throw(OSError("offline"))
+        try:
+            self.assertEqual(b.fetch_stars("o", "r", None, 7), 7)
+        finally:
+            b.http_get = orig
+
     def test_badging(self):
         info = b.parse_badging(BADGING)
         self.assertEqual(info["package"], "dev.resonance.player")

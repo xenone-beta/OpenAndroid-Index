@@ -304,6 +304,15 @@ def reusable(previous_versions, asset):
     return None
 
 
+def fetch_stars(owner, repo, token, fallback=0):
+    """GitHub star count of the repository; keeps the previous value if GitHub cannot be reached."""
+    try:
+        with http_get(f"https://api.github.com/repos/{owner}/{repo}", token, "application/vnd.github+json") as response:
+            return max(0, int(json.load(response).get("stargazers_count", 0)))
+    except Exception:
+        return fallback
+
+
 def build_app(meta, owner, repo, previous_app, token, tools, workdir):
     package = str(meta["package"])
     pinned = str(meta.get("signer", "")).lower()
@@ -412,6 +421,8 @@ def main():
                 app, problems, newest = build_app(meta, owner, repo, previous.get(meta["package"]), token, tools, workdir)
                 icon = resolve_icon(meta, owner, repo, previous.get(meta["package"]), newest, tools, workdir,
                                     args.icons, out / "icons", network=not args.check)
+                if not args.check:
+                    app["stars"] = fetch_stars(owner, repo, token, int(previous.get(meta["package"], {}).get("stars", 0)))
                 if icon:
                     app["icon"] = icon
                 elif args.check:
