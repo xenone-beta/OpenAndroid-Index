@@ -31,6 +31,8 @@ class Tests(unittest.TestCase):
 
     def test_signer(self):
         self.assertEqual(b.parse_apksigner(SIGNER), "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899")
+        v3 = "Verifies\nSigner (minSdkVersion=26, maxSdkVersion=2147483647) certificate SHA-256 digest: " + "ab" * 32 + "\n"
+        self.assertEqual(b.parse_apksigner(v3), "ab" * 32)
         with self.assertRaises(b.AppError):
             b.parse_apksigner("DOES NOT VERIFY")
 

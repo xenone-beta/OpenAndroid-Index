@@ -87,7 +87,18 @@ def http_get(url, token=None, accept=None):
         headers["Authorization"] = f"Bearer {token}"
     if accept:
         headers["Accept"] = accept
-    return urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=60)
+    request = urllib.request.Request(url, headers=headers)
+    # GitHub sometimes answers 502/503/504 for a moment; try a few times.
+    for attempt in range(4):
+        try:
+            return urllib.request.urlopen(request, timeout=60)
+        except urllib.error.HTTPError as e:
+            if e.code not in (500, 502, 503, 504) or attempt == 3:
+                raise
+        except (urllib.error.URLError, TimeoutError):
+            if attempt == 3:
+                raise
+        time.sleep(2 * (attempt + 1))
 
 
 def fetch_releases(owner, repo, token):
@@ -144,9 +155,10 @@ def parse_badging(text):
 
 def parse_apksigner(text):
     """Reads `apksigner verify --print-certs` output. Returns the certificate SHA-256 of the signer."""
-    digests = re.findall(r"Signer #\d+ certificate SHA-256 digest: ([0-9a-fA-F]{64})", text)
+    # Older apksigner prints "Signer #1 ...", newer ones with v3 signatures print "Signer (minSdkVersion=24, ...) ...".
+    digests = re.findall(r"Signer (?:#\d+|\([^)]*\)) certificate SHA-256 digest: ([0-9a-fA-F]{64})", text)
     if not digests:
-        raise AppError("the APK is not signed, or its signature is invalid")
+        raise AppError("could not read the signing certificate from apksigner output: " + text.strip()[:300])
     if len(set(d.lower() for d in digests)) > 1:
         raise AppError("the APK has several different signers")
     return digests[0].lower()
