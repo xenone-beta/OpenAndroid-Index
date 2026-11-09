@@ -15,7 +15,7 @@ The catalog behind **OpenAndroid Store**: a list of open-source Android apps. Th
 
 1. Fork this repository.
 2. Copy `apps/dev.resonance.player.yml` to `apps/<your.package.name>.yml` and fill it in.
-3. Optionally add a square `icons/<your.package.name>.png` (512×512).
+3. Optionally add screenshots in `screenshots/<your.package.name>/` (PNG, JPG or WebP, up to 8 files of 3 MB, sorted by file name).
 4. Open a pull request. A check downloads your APK and verifies it.
 
 ```yaml
@@ -27,9 +27,23 @@ repo: https://github.com/you/example
 license: MIT                    # SPDX id of an open-source license
 author: you                     # optional
 signer: <sha256 of your cert>   # optional: pin your signing key so it can never change by mistake
+website: https://example.com    # optional
+issues: https://github.com/you/example/issues   # optional, defaults to <repo>/issues
 description: |
   A few sentences about the app.
 ```
+
+### Icons
+
+The store needs a raster icon. The script looks for one in this order:
+
+1. `icons/<package>.png` (or `.webp`) in this repository, square, 512×512 recommended
+2. `fastlane/metadata/android/en-US/images/icon.png` in your app's repository
+3. the icon published last time
+4. a PNG or WebP icon found inside the APK itself
+
+Apps that only have an adaptive (XML) launcher icon, like most Compose apps, have nothing to extract:
+add option 1 or 2. Without any icon the store shows a colored letter.
 
 Categories: Communication, Development, Education, Games, Media, Music, Other, Productivity, Security, System, Tools.
 

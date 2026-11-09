@@ -17,6 +17,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.parse
+import zipfile
 import time
 import urllib.error
 import urllib.request
@@ -27,6 +29,9 @@ import yaml
 FORMAT = 1
 MAX_RELEASES = 8
 MAX_APK_BYTES = 200 * 1024 * 1024
+MAX_IMAGE_BYTES = 3 * 1024 * 1024
+MAX_SCREENSHOTS = 8
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
 
 CATEGORIES = [
     "Communication", "Development", "Education", "Games", "Media", "Music",
@@ -76,6 +81,10 @@ def validate_meta(meta, filename):
     signer = str(meta.get("signer", "")).lower()
     if signer and not re.fullmatch(r"[0-9a-f]{64}", signer):
         raise AppError("signer must be a 64-character hex SHA-256 of the signing certificate")
+    for key in ("website", "issues"):
+        value = str(meta.get(key, "")).strip()
+        if value and not value.startswith("https://"):
+            raise AppError(f"'{key}' must be an https:// link")
     return match.group(1), match.group(2)
 
 
@@ -193,6 +202,97 @@ def download(url, target):
     return sha.hexdigest(), size
 
 
+# ---- Icons and screenshots ----------------------------------------------------------------
+
+def image_kind(data):
+    """'png' or 'webp' when [data] starts like such an image, otherwise None."""
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    return None
+
+
+def parse_icon_path(badging):
+    """Path of the best raster icon inside the APK, or None (adaptive icons are XML and cannot be used)."""
+    found = [(int(d), p) for d, p in re.findall(r"application-icon-(\d+):'([^']+)'", badging)
+             if p.lower().endswith((".png", ".webp"))]
+    if found:
+        return max(found)[1]
+    m = re.search(r"application: label='[^']*' icon='([^']*)'", badging)
+    if m and m.group(1).lower().endswith((".png", ".webp")):
+        return m.group(1)
+    return None
+
+
+def fetch_bytes(url, limit=MAX_IMAGE_BYTES):
+    try:
+        with http_get(url) as response:
+            data = response.read(limit + 1)
+    except (urllib.error.URLError, TimeoutError):
+        return None
+    return data if 0 < len(data) <= limit else None
+
+
+def save_icon(data, package, out_icons):
+    kind = image_kind(data or b"")
+    if not kind:
+        return None
+    for old in out_icons.glob(f"{package}.*"):
+        old.unlink()
+    name = f"{package}.{kind}"
+    (out_icons / name).write_bytes(data)
+    return f"icons/{name}"
+
+
+def resolve_icon(meta, owner, repo, previous_app, newest_asset, tools, workdir, icons_dir, out_icons, network):
+    """Finds an icon: 1) icons/<package>.png in this repo, 2) the app repo's fastlane icon,
+    3) the icon already published, 4) the raster icon inside the newest APK. Returns a path or None."""
+    package = str(meta["package"])
+    for ext in ("png", "webp"):
+        local = Path(icons_dir) / f"{package}.{ext}"
+        if local.is_file():
+            return save_icon(local.read_bytes(), package, out_icons)
+    if not network:
+        return None
+    fastlane = f"https://raw.githubusercontent.com/{owner}/{repo}/HEAD/fastlane/metadata/android/en-US/images/icon.png"
+    found = save_icon(fetch_bytes(fastlane), package, out_icons)
+    if found:
+        return found
+    base = os.environ.get("PAGES_BASE")
+    if base and (previous_app or {}).get("icon"):
+        found = save_icon(fetch_bytes(urllib.parse.urljoin(base, previous_app["icon"])), package, out_icons)
+        if found:
+            return found
+    if newest_asset:
+        try:
+            target = os.path.join(workdir, "icon-source.apk")
+            download(newest_asset["browser_download_url"], target)
+            badging = subprocess.run([tools[0], "dump", "badging", target], capture_output=True, text=True).stdout
+            entry = parse_icon_path(badging)
+            if entry:
+                with zipfile.ZipFile(target) as z:
+                    return save_icon(z.read(entry), package, out_icons)
+        except (AppError, OSError, KeyError, zipfile.BadZipFile, urllib.error.URLError):
+            pass
+    return None
+
+
+def copy_screenshots(package, screenshots_dir, out):
+    """Copies screenshots/<package>/* into the output and returns their relative paths."""
+    source = Path(screenshots_dir) / package
+    if not source.is_dir():
+        return []
+    files = sorted(p for p in source.iterdir() if p.suffix.lower() in IMAGE_EXTENSIONS and p.stat().st_size <= MAX_IMAGE_BYTES)
+    target = out / "screenshots" / package
+    result = []
+    for p in files[:MAX_SCREENSHOTS]:
+        target.mkdir(parents=True, exist_ok=True)
+        shutil.copy(p, target / p.name)
+        result.append(f"screenshots/{package}/{p.name}")
+    return result
+
+
 # ---- Building -----------------------------------------------------------------------------
 
 def reusable(previous_versions, asset):
@@ -210,11 +310,14 @@ def build_app(meta, owner, repo, previous_app, token, tools, workdir):
     previous_versions = (previous_app or {}).get("versions", [])
     versions = []
     problems = []
+    newest_asset = None
 
     for release in fetch_releases(owner, repo, token):
         asset = pick_asset(release)
         if asset is None:
             continue
+        if newest_asset is None:
+            newest_asset = asset
         try:
             cached = reusable(previous_versions, asset)
             if cached:
@@ -267,13 +370,17 @@ def build_app(meta, owner, repo, previous_app, token, tools, workdir):
         "author": str(meta.get("author") or owner),
         "versions": versions,
     }
-    return app, problems
+    for key in ("website", "issues"):
+        if str(meta.get(key, "")).strip():
+            app[key] = str(meta[key]).strip()
+    return app, problems, newest_asset
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--apps", default="apps")
     parser.add_argument("--icons", default="icons")
+    parser.add_argument("--screenshots", default="screenshots")
     parser.add_argument("--out", default="public")
     parser.add_argument("--previous", default=None, help="the currently published index.json, to avoid re-downloading")
     parser.add_argument("--check", action="store_true")
@@ -302,11 +409,16 @@ def main():
                 if meta["package"] in seen:
                     raise AppError("duplicate package")
                 seen.add(meta["package"])
-                app, problems = build_app(meta, owner, repo, previous.get(meta["package"]), token, tools, workdir)
-                icon = Path(args.icons) / f"{meta['package']}.png"
-                if icon.is_file():
-                    shutil.copy(icon, out / "icons" / icon.name)
-                    app["icon"] = f"icons/{icon.name}"
+                app, problems, newest = build_app(meta, owner, repo, previous.get(meta["package"]), token, tools, workdir)
+                icon = resolve_icon(meta, owner, repo, previous.get(meta["package"]), newest, tools, workdir,
+                                    args.icons, out / "icons", network=not args.check)
+                if icon:
+                    app["icon"] = icon
+                elif args.check:
+                    print(f"::notice file={path}::no icons/{meta['package']}.png; the store will try the repo and the APK, else show a letter")
+                shots = copy_screenshots(meta["package"], args.screenshots, out)
+                if shots:
+                    app["screenshots"] = shots
                 apps.append(app)
                 for problem in problems:
                     print(f"::warning file={path}::{problem}")

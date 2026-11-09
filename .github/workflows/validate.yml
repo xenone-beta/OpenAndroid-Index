@@ -5,6 +5,7 @@ on:
     paths:
       - "apps/**"
       - "icons/**"
+      - "screenshots/**"
       - "scripts/**"
       - ".github/workflows/**"
   workflow_dispatch:

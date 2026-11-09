@@ -62,6 +62,23 @@ class Tests(unittest.TestCase):
         self.assertEqual(b.pick_asset(release)["name"], "app-release.apk")
         self.assertIsNone(b.pick_asset({"assets": [{"name": "x.zip"}]}))
 
+    def test_icon_path_prefers_raster_with_highest_density(self):
+        text = ("application-icon-120:'res/mipmap-hdpi/ic.png'\napplication-icon-640:'res/mipmap-xxxhdpi/ic.png'\n"
+                "application-icon-65534:'res/mipmap-anydpi-v26/ic.xml'\n")
+        self.assertEqual(b.parse_icon_path(text), "res/mipmap-xxxhdpi/ic.png")
+        self.assertIsNone(b.parse_icon_path("application-icon-65534:'res/mipmap-anydpi-v26/ic.xml'\n"))
+        self.assertEqual(b.parse_icon_path("application: label='A' icon='res/a.webp'\n"), "res/a.webp")
+
+    def test_image_kind(self):
+        self.assertEqual(b.image_kind(b"\x89PNG\r\n\x1a\nrest"), "png")
+        self.assertEqual(b.image_kind(b"RIFF\x00\x00\x00\x00WEBPVP8 "), "webp")
+        self.assertIsNone(b.image_kind(b"<html>"))
+
+    def test_support_links_must_be_https(self):
+        with self.assertRaises(b.AppError):
+            b.validate_meta(dict(META, website="http://x.example"), "dev.a.b.yml")
+        b.validate_meta(dict(META, website="https://x.example", issues="https://x.example/bugs"), "dev.a.b.yml")
+
     def test_reuse_needs_same_asset(self):
         asset = {"browser_download_url": "https://x/a.apk", "updated_at": "t1", "size": 5}
         old = [{"apk": "https://x/a.apk", "assetUpdatedAt": "t1", "size": 5, "sha256": "aa"}]

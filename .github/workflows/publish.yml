@@ -6,6 +6,7 @@ on:
     paths:
       - "apps/**"
       - "icons/**"
+      - "screenshots/**"
       - "scripts/**"
       - ".github/workflows/publish.yml"
   schedule:
@@ -43,6 +44,7 @@ jobs:
       - name: Build the catalog
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PAGES_BASE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
         run: python scripts/build_index.py --previous previous.json --out public
 
       - uses: actions/upload-pages-artifact@v3
