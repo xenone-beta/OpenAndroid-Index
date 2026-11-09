@@ -155,8 +155,9 @@ def parse_badging(text):
 
 def parse_apksigner(text):
     """Reads `apksigner verify --print-certs` output. Returns the certificate SHA-256 of the signer."""
-    # Older apksigner prints "Signer #1 ...", newer ones with v3 signatures print "Signer (minSdkVersion=24, ...) ...".
-    digests = re.findall(r"Signer (?:#\d+|\([^)]*\)) certificate SHA-256 digest: ([0-9a-fA-F]{64})", text)
+    # Formats seen in the wild: "Signer #1 certificate ...", "Signer (minSdkVersion=24, ...) certificate ..."
+    # and, in the newest build-tools, "V2 Signer: certificate ...".
+    digests = re.findall(r"Signer(?:\s+#\d+|\s*\([^)]*\))?:?\s+certificate SHA-256 digest:\s*([0-9a-fA-F]{64})", text)
     if not digests:
         raise AppError("could not read the signing certificate from apksigner output: " + text.strip()[:300])
     if len(set(d.lower() for d in digests)) > 1:

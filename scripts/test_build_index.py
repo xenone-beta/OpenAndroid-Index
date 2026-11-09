@@ -33,6 +33,8 @@ class Tests(unittest.TestCase):
         self.assertEqual(b.parse_apksigner(SIGNER), "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899")
         v3 = "Verifies\nSigner (minSdkVersion=26, maxSdkVersion=2147483647) certificate SHA-256 digest: " + "ab" * 32 + "\n"
         self.assertEqual(b.parse_apksigner(v3), "ab" * 32)
+        v2 = "V2 Signer: certificate DN: CN=Android Debug\nV2 Signer: certificate SHA-256 digest: " + "cd" * 32 + "\nV3 Signer: certificate SHA-256 digest: " + "cd" * 32 + "\n"
+        self.assertEqual(b.parse_apksigner(v2), "cd" * 32)
         with self.assertRaises(b.AppError):
             b.parse_apksigner("DOES NOT VERIFY")
 
